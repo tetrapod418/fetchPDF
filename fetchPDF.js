@@ -61,7 +61,7 @@ async function getFile(key, name, contentType){
         .then((resp) => {
             const savePath = `temp/${name}`;
             const distStream = createWriteStream(savePath);
-            resp.body.pipeTo();
+            resp.body.pipeTo(distStream);
             console.log(`ファイル書き出しOK=>${name}`);
         });
     }
