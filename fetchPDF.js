@@ -3,6 +3,7 @@ const {KintoneRestAPIClient} = require('@kintone/rest-api-client');
 const { log } = require('console');
 const { getDiffieHellman } = require('crypto');
 const {createWriteStream} = require('fs');
+const { pipeline } = require('stream/promises');
 
 
 (async ()=>{
@@ -13,7 +14,7 @@ const {createWriteStream} = require('fs');
           // kintoneのデータ取得先を設定
           baseUrl: 'https://1lc011kswasj.cybozu.com',
           auth: {
-            apiToken: process.env.KINTONE_API_TOKEN
+            apiToken: KINTONE_API_TOKEN
           }
         });
     
@@ -38,10 +39,8 @@ const {createWriteStream} = require('fs');
         console.log(`getRecords ${record.records.length} records`);
         record.records.map(
             (record) => {
-                const { fileKey, name, contentType } = record['pdf'].value[0];
-                
-                console.log(`filekey=${fileKey}, contentType=${contentType}`);
-                getFile(fileKey, name, contentType);
+                // ファイルの取得
+                getFile(record['pdf'].value[0]);
             }
         )
     } catch (err) {
@@ -49,19 +48,25 @@ const {createWriteStream} = require('fs');
     }
 })();
 
-async function getFile(key, name, contentType){
+// ファイルの取得
+async function getFile(fileObj){
     try{
+        const { fileKey, name, contentType } = fileObj;
+        console.log(`getFile=>${fileKey}`);
         const headers = {
             'X-Requested-With': 'XMLHttpRequest',
+            'Host': '1lc011kswasj.cybozu.com:443',
+            'X-Cybozu-API-Token': process.env.KINTONE_API_TOKEN
         };
-        const resp = await fetch(`https://1lc011kswasj.cybozu.com/k/v1/${name}?fileKey=${key}`, {
+        const resp = await fetch(`https://1lc011kswasj.cybozu.com/k/v1/${name}?fileKey=${fileKey}`, {
             method: 'GET',
             headers,
         })
         .then((resp) => {
             const savePath = `temp/${name}`;
             const distStream = createWriteStream(savePath);
-            resp.body.pipeTo(distStream);
+            // レスポンスをファイルに書き出し
+            pipeline(resp.body, distStream);
             console.log(`ファイル書き出しOK=>${name}`);
         });
     }
