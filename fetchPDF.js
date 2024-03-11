@@ -14,7 +14,7 @@ const { pipeline } = require('stream/promises');
           // kintoneのデータ取得先を設定
           baseUrl: 'https://1lc011kswasj.cybozu.com',
           auth: {
-            apiToken: KINTONE_API_TOKEN
+            apiToken: process.env.KINTONE_API_TOKEN
           }
         });
     
@@ -52,23 +52,23 @@ const { pipeline } = require('stream/promises');
 async function getFile(fileObj){
     try{
         const { fileKey, name, contentType } = fileObj;
-        console.log(`getFile=>${fileKey}`);
+        console.log(`fetch start ${name} contentType:${contentType}`)
         const headers = {
             'X-Requested-With': 'XMLHttpRequest',
-            'Host': '1lc011kswasj.cybozu.com:443',
             'X-Cybozu-API-Token': process.env.KINTONE_API_TOKEN
         };
-        const resp = await fetch(`https://1lc011kswasj.cybozu.com/k/v1/${name}?fileKey=${fileKey}`, {
+        const resp = await fetch(`https://1lc011kswasj.cybozu.com/k/v1/file.json?fileKey=${fileKey}`, {
             method: 'GET',
             headers,
-        })
-        .then((resp) => {
-            const savePath = `temp/${name}`;
-            const distStream = createWriteStream(savePath);
-            // レスポンスをファイルに書き出し
-            pipeline(resp.body, distStream);
-            console.log(`ファイル書き出しOK=>${name}`);
         });
+        if(!resp.ok){
+            throw new Error(`Network response was not OK [name]${name} [status]${resp.status}`);
+        }
+        const savePath = `temp/${name}`;
+        const distStream = createWriteStream(savePath);
+        // レスポンスをファイルに書き出し
+        pipeline(resp.body, distStream);
+        console.log(`ファイル書き出しOK=>${name}`);
     }
     catch (err) {
         console.error(err);
