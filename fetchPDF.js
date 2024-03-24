@@ -4,6 +4,8 @@ const { log } = require('console');
 const { getDiffieHellman } = require('crypto');
 const {createWriteStream} = require('fs');
 const { pipeline } = require('stream/promises');
+const { resolve } = require('path');
+const { subscribe } = require('diagnostics_channel');
 
 
 (async ()=>{
@@ -40,7 +42,15 @@ const { pipeline } = require('stream/promises');
         record.records.map(
             (record) => {
                 // ファイルの取得
-                getFile(record['pdf'].value[0]);
+                const gotFile = getFile(record['pdf'].value[0]);
+                if(gotFile){
+                    // ファイルが取得できたら、pdffontsの実行
+                    const success = runPfdfonts(record['pdf'].value[0]);
+                    // pdffontsの実行に成功したら、結果反映とステータス更新
+                    if(success){
+                        updateRecord(record);
+                    }
+                }
             }
         )
     } catch (err) {
@@ -69,8 +79,39 @@ async function getFile(fileObj){
         // レスポンスをファイルに書き出し
         pipeline(resp.body, distStream);
         console.log(`ファイル書き出しOK=>${name}`);
+        return Promise.resolve(true);
     }
     catch (err) {
         console.error(err);
+        return Promise.reject(err);
     }
+}
+
+// pdffontsの実行（実行結果は、pdfファイル名.txtに保存
+async function runPfdfonts(fileObj) {
+    const { fileKey, name, contentType } = fileObj;
+    const fullPath = `temp/${name}`;
+    const resultPath = fullPath.replace(".pdf", ".txt");
+    const exec = require("child_process").exec;
+    const command = `pdffonts ${fullPath} > ${resultPath}`;
+    const promise = new Promise((resolve, reject) => {
+      exec(command, (error) => {
+        if (error) {
+          reject(error);
+        }
+        resolve(true);
+      });
+    }).then(
+        function resolve(val) {
+            console.log(`onFulfilled ${val}`);
+        },
+        function reject(reason) {
+            console.log(`onRejected reason ${reason}`);
+        } );
+    return promise;
+}
+
+// 対象レコードへのpdffontsの結果反映とステータス更新
+async function updateRecord(record) {
+    return false;
 }
