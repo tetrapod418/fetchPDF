@@ -3,9 +3,11 @@ const {KintoneRestAPIClient} = require('@kintone/rest-api-client');
 const { log } = require('console');
 const { getDiffieHellman } = require('crypto');
 const {createWriteStream} = require('fs');
+const {readFile} = require('fs/promises')
 const { pipeline } = require('stream/promises');
 const { resolve } = require('path');
 const { subscribe } = require('diagnostics_channel');
+const { rejects } = require('assert');
 
 
 (async ()=>{
@@ -42,26 +44,40 @@ const { subscribe } = require('diagnostics_channel');
         record.records.map(
             (record) => {
                 // ファイルの取得
-                const gotFile = getFile(record['pdf'].value[0]);
-                if(gotFile){
+                const { fileKey, name, contentType } = record['pdf'].value[0];
+                // 拡張子がpdfだったら、ダウンロードしてpdffonts実行
+                const extention = (name.split('.').slice(-1)[0]).toLowerCase();
+                console.log(`拡張子: ${extention}`);
+                if( extention === 'pdf'){
+                    const gotFile = getFile(fileKey, name, contentType);
+                    const fullPath = `temp/${name}`;
+                    const resultPath = fullPath.replace(".pdf", ".txt");
                     // ファイルが取得できたら、pdffontsの実行
-                    const success = runPfdfonts(record['pdf'].value[0]);
-                    // pdffontsの実行に成功したら、結果反映とステータス更新
-                    if(success){
-                        updateRecord(record);
-                    }
+                    runPfdfonts(fullPath, resultPath, (err) => {
+                        if(err){
+                            return rejects(err);
+                        }
+                        return resolve(true);
+                    }).then(
+                        function resolve(value){
+                            // pdffontsの実行に成功したら、結果反映とステータス更新
+                            updateRecord(client, record.$id, resultPath);
+                        },
+                        function reject(value) {
+
+                        }
+                    );
                 }
             }
         )
     } catch (err) {
-        console.error(err);
+        console.error(`実行失敗`);
     }
 })();
 
 // ファイルの取得
-async function getFile(fileObj){
+async function getFile(fileKey, name, contentType){
     try{
-        const { fileKey, name, contentType } = fileObj;
         console.log(`fetch start ${name} contentType:${contentType}`)
         const headers = {
             'X-Requested-With': 'XMLHttpRequest',
@@ -88,10 +104,7 @@ async function getFile(fileObj){
 }
 
 // pdffontsの実行（実行結果は、pdfファイル名.txtに保存
-async function runPfdfonts(fileObj) {
-    const { fileKey, name, contentType } = fileObj;
-    const fullPath = `temp/${name}`;
-    const resultPath = fullPath.replace(".pdf", ".txt");
+async function runPfdfonts(fullPath, resultPath) {
     const exec = require("child_process").exec;
     const command = `pdffonts ${fullPath} > ${resultPath}`;
     const promise = new Promise((resolve, reject) => {
@@ -112,6 +125,50 @@ async function runPfdfonts(fileObj) {
 }
 
 // 対象レコードへのpdffontsの結果反映とステータス更新
-async function updateRecord(record) {
-    return false;
+async function updateRecord(client, recordid, resultPath) {
+    try {
+        console.log(`結果ファイルの読み込み ${resultPath}`);
+        // 結果の読み込み
+        readFile(resultPath, { encoding: "utf8" }, (err, pdffontsResult) => {
+            if (err) {
+                console.error(err.message);
+                return rejects(err);
+            }
+            console.log(`pdffontsResult\n${pdffontsResult}`);
+            console.log(`結果の長さ ${pdffontsResult.length}`);
+            // レコードのpdffonts結果テキストを更新
+            const params = {
+                app: APP_ID,
+                id: recordid,
+                record: {
+                    "results_text" : {
+                        "value": pdffontsResult
+                    }
+                }
+            }
+            client.record.updateRecord(params, (err) => {
+                if (err) {
+                    console.error(err.message);
+                    return rejects(err);
+                }
+                console.log('record update success');
+                const statusParams = {
+                    action : "自動チェック済",
+                    app: APP_ID,
+                    id: recordid,
+                }
+                // ステータス更新
+                client.record.updateRecordStatus(statusParams, (err) => {
+                    if (err) {
+                        console.error(err.message);
+                        return rejects(err);
+                    }
+                    return resolve(true);
+                });
+            });
+        });
+    } catch(err) {
+        console.error(err.message);
+        return rejects(err);
+    }
 }
