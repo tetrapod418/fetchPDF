@@ -1,6 +1,6 @@
 const { exit } = require('process');
 const {KintoneRestAPIClient} = require('@kintone/rest-api-client');
-const { log } = require('console');
+const { log, error } = require('console');
 const { getDiffieHellman } = require('crypto');
 const {createWriteStream} = require('fs');
 const {readFile} = require('fs/promises')
@@ -53,25 +53,21 @@ const { rejects } = require('assert');
                     const fullPath = `temp/${name}`;
                     const resultPath = fullPath.replace(".pdf", ".txt");
                     // ファイルが取得できたら、pdffontsの実行
-                    runPfdfonts(fullPath, resultPath, (err) => {
-                        if(err){
-                            return rejects(err);
-                        }
-                        return resolve(true);
-                    }).then(
+                    runPfdfonts(fullPath, resultPath).then(
                         function resolve(value){
-                            // pdffontsの実行に成功したら、結果反映とステータス更新
-                            updateRecord(client, record.$id, resultPath);
+                            console.log(`pdffonts 成功 => ${resultPath}`)
                         },
                         function reject(value) {
-
+                            throw new Error(`pdffonts 失敗 :${value}`);
                         }
                     );
+                    // pdffontsの実行に成功したら、結果反映とステータス更新
+                    updateRecord(client, APP_ID, record.$id.value, resultPath);
                 }
             }
         )
     } catch (err) {
-        console.error(`実行失敗`);
+        console.error(`実行失敗 :${err.message}`);
     }
 })();
 
@@ -125,47 +121,44 @@ async function runPfdfonts(fullPath, resultPath) {
 }
 
 // 対象レコードへのpdffontsの結果反映とステータス更新
-async function updateRecord(client, recordid, resultPath) {
+async function updateRecord(client, app, recordid, resultPath) {
     try {
-        console.log(`結果ファイルの読み込み ${resultPath}`);
+        console.log(`ID${recordid} : 結果ファイルの読み込み ${resultPath}`);
         // 結果の読み込み
-        readFile(resultPath, { encoding: "utf8" }, (err, pdffontsResult) => {
+        const pdffontsResult = await readFile(encodeURI(resultPath), { encoding: "utf8" });
+        // console.log(`pdffontsResult\n${pdffontsResult}`);
+        // console.log(`結果の長さ ${pdffontsResult.length}`);
+        if(pdffontsResult.length<=0){
+            throw new Error(`pdffontsResult is empty!`);
+        }
+        // レコードのpdffonts結果テキストを更新
+        const params = {
+            app,
+            id: recordid,
+            record: {
+                "results_text" : {
+                        "value": pdffontsResult
+                }
+            }
+        }
+        client.record.updateRecord(params, (err) => {
             if (err) {
                 console.error(err.message);
                 return rejects(err);
             }
-            console.log(`pdffontsResult\n${pdffontsResult}`);
-            console.log(`結果の長さ ${pdffontsResult.length}`);
-            // レコードのpdffonts結果テキストを更新
-            const params = {
-                app: APP_ID,
-                id: recordid,
-                record: {
-                    "results_text" : {
-                        "value": pdffontsResult
-                    }
-                }
+            console.log('record update success');
+        });
+        // ステータス更新
+        const statusParams = {
+            action : "自動チェック済",
+            app,
+            id: recordid,
+        }
+        client.record.updateRecordStatus(statusParams, (err) => {
+            if (err) {
+                console.error(err.message);
+                return rejects(err);
             }
-            client.record.updateRecord(params, (err) => {
-                if (err) {
-                    console.error(err.message);
-                    return rejects(err);
-                }
-                console.log('record update success');
-                const statusParams = {
-                    action : "自動チェック済",
-                    app: APP_ID,
-                    id: recordid,
-                }
-                // ステータス更新
-                client.record.updateRecordStatus(statusParams, (err) => {
-                    if (err) {
-                        console.error(err.message);
-                        return rejects(err);
-                    }
-                    return resolve(true);
-                });
-            });
         });
     } catch(err) {
         console.error(err.message);
