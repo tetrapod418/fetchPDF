@@ -26,10 +26,7 @@ jobs:
       - name: debug
         run: ls temp/* 
       - name: run pdffonts
-        run:
-          for file in `\find ./temp -name '*.pdf'`; do
-            pdffonts $file > ${file%.*}.txt
-          done
+        run: sh execPdffonts.sh
       - name: update kintone records
         run: node jobs/updateRecords.js
       - name: finish work
