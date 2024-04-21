@@ -23,7 +23,8 @@ jobs:
              mkdir -p done
       - name: fetch pdf files
         run: node jobs/fetchPDF.js
-             ls temp/* 
+      - name: debug
+        run: ls temp/* 
       - name: run pdffonts
         run:
           for file in `\find ./temp -name '*.pdf'`; do
