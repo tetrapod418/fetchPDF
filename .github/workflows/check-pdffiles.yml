@@ -6,7 +6,8 @@ jobs:
   fetch-pdf:
     runs-on: ubuntu-latest
     defaults:
-      working-directory: ./checkPDF
+      run:
+        working-directory: ./jobs
     env:
       KINTONE_FETCH_API_TOKEN: ${{ secrets.JNKYKN_KINTONE_API_TOKEN_APPID4 }}
       MY_PRIVATE_TOKEN: ${{ secrets.JNKYKN_RERSONAL_ACCESS_TOKEN }}
