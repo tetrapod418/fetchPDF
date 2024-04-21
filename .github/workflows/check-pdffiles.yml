@@ -29,7 +29,6 @@ jobs:
         run:
           for file in `\find ./temp -name '*.pdf'`; do
             pdffonts $file > ${file%.*}.txt
-            mv $file done/${file##*/} 
           done
       - name: update kintone records
         run: node jobs/updateRecords.js
