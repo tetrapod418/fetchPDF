@@ -1,0 +1,33 @@
+name: check-pdffiles
+run-name: ${{ github.actor }} exectutes check pdffiles
+on: 
+    workflow_dispatch:
+jobs:
+  fetch-pdf:
+    runs-on: ubuntu-latest
+    env:
+      KINTONE_FETCH_API_TOKEN: ${{ secrets.JNKYKN_KINTONE_API_TOKEN_APPID4 }}
+      MY_PRIVATE_TOKEN: ${{ secrets.JNKYKN_RERSONAL_ACCESS_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install modules
+        run: npm ci
+      - name: make dirs
+        run: mkdir -p temp
+             mkdir -p done
+      - name: fetch pdf files
+        run: node jobs/fetchPDF.js
+      - name: run pdffonts
+        run:
+          for file in `\find ./temp -name '*.pdf'`; do
+            pdffonts $file > ${file%.*}.txt
+            mv $file done/${file##*/} 
+          done
+      - name: update kintone records
+        run: node jobs/updateRecords.js
+      - name: finish work
+        run: rm ./temp/*
+             rm ./done/*

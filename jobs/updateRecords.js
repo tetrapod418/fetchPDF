@@ -2,8 +2,8 @@ const { exit } = require('process');
 const {KintoneRestAPIClient} = require('@kintone/rest-api-client');
 const { log, error } = require('console');
 const { getDiffieHellman } = require('crypto');
-const {createWriteStream} = require('fs');
-const {readFile} = require('fs/promises')
+const { createWriteStream, existsSync } = require('fs');
+const { readFile, exists } = require('fs/promises')
 const { pipeline } = require('stream/promises');
 const { resolve } = require('path');
 const { subscribe } = require('diagnostics_channel');
@@ -18,11 +18,11 @@ const { rejects } = require('assert');
           // kintoneのデータ取得先を設定
           baseUrl: 'https://1lc011kswasj.cybozu.com',
           auth: {
-            apiToken: process.env.KINTONE_API_TOKEN
+            apiToken: process.env.KINTONE_FETCH_API_TOKEN
           }
         });
     
-        console.log(`${!process.env.KINTONE_API_TOKEN?"NO TOKEN" : "SET TOKEN"}`);
+        console.log(`${!process.env.KINTONE_FETCH_API_TOKEN?"NO TOKEN" : "SET TOKEN"}`);
 
         // リクエストパラメータの設定
         const APP_ID = 4;
@@ -43,26 +43,16 @@ const { rejects } = require('assert');
         console.log(`getRecords ${record.records.length} records`);
         record.records.map(
             (record) => {
-                // ファイルの取得
+                // ファイル情報の取得
                 const { fileKey, name, contentType } = record['pdf'].value[0];
-                // 拡張子がpdfだったら、ダウンロードしてpdffonts実行
+                // 拡張子がpdfだったら、pdffonts実行
                 const extention = (name.split('.').slice(-1)[0]).toLowerCase();
                 console.log(`拡張子: ${extention}`);
                 if( extention === 'pdf'){
-                    const gotFile = getFile(fileKey, name, contentType);
                     const fullPath = `temp/${name}`;
                     const resultPath = fullPath.replace(".pdf", ".txt");
-                    // ファイルが取得できたら、pdffontsの実行
-                    runPfdfonts(fullPath, resultPath).then(
-                        function resolve(value){
-                            console.log(`pdffonts 成功 => ${resultPath}`)
-                        },
-                        function reject(value) {
-                            throw new Error(`pdffonts 失敗 :${value}`);
-                        }
-                    );
-                    // pdffontsの実行に成功したら、結果反映とステータス更新
-                    updateRecord(client, APP_ID, record.$id.value, resultPath);
+                    // pdffontsの実行結果反映とステータス更新
+                    return updateAppRecord(client, APP_ID, record.$id.value, resultPath);
                 }
             }
         )
@@ -71,66 +61,26 @@ const { rejects } = require('assert');
     }
 })();
 
-// ファイルの取得
-async function getFile(fileKey, name, contentType){
-    try{
-        console.log(`fetch start ${name} contentType:${contentType}`)
-        const headers = {
-            'X-Requested-With': 'XMLHttpRequest',
-            'X-Cybozu-API-Token': process.env.KINTONE_API_TOKEN
-        };
-        const resp = await fetch(`https://1lc011kswasj.cybozu.com/k/v1/file.json?fileKey=${fileKey}`, {
-            method: 'GET',
-            headers,
-        });
-        if(!resp.ok){
-            throw new Error(`Network response was not OK [name]${name} [status]${resp.status}`);
-        }
-        const savePath = `temp/${name}`;
-        const distStream = createWriteStream(savePath);
-        // レスポンスをファイルに書き出し
-        pipeline(resp.body, distStream);
-        console.log(`ファイル書き出しOK=>${name}`);
-        return Promise.resolve(true);
-    }
-    catch (err) {
-        console.error(err);
-        return Promise.reject(err);
-    }
-}
-
-// pdffontsの実行（実行結果は、pdfファイル名.txtに保存
-async function runPfdfonts(fullPath, resultPath) {
-    const exec = require("child_process").exec;
-    const command = `pdffonts ${fullPath} > ${resultPath}`;
-    const promise = new Promise((resolve, reject) => {
-      exec(command, (error) => {
-        if (error) {
-          reject(error);
-        }
-        resolve(true);
-      });
-    }).then(
-        function resolve(val) {
-            console.log(`onFulfilled ${val}`);
-        },
-        function reject(reason) {
-            console.log(`onRejected reason ${reason}`);
-        } );
-    return promise;
-}
 
 // 対象レコードへのpdffontsの結果反映とステータス更新
-async function updateRecord(client, app, recordid, resultPath) {
+async function updateAppRecord(client, app, recordid, resultPath) {
     try {
         console.log(`ID${recordid} : 結果ファイルの読み込み ${resultPath}`);
         // 結果の読み込み
         const pdffontsResult = await readFile(encodeURI(resultPath), { encoding: "utf8" });
-        // console.log(`pdffontsResult\n${pdffontsResult}`);
-        // console.log(`結果の長さ ${pdffontsResult.length}`);
         if(pdffontsResult.length<=0){
             throw new Error(`pdffontsResult is empty!`);
         }
+        // pdffonts実行結果のパース
+        const resultCols = {
+            fontname, fonttype, encoding, emb, sub, uni, fontobject, fontID
+        }
+        const rows = pdffontsResult.split('\n').filter((row) => row.split(' ').length > 3).map(
+            (row) => {
+                return new resultCols(parsLine(row));
+            }
+        );
+
         // レコードのpdffonts結果テキストを更新
         const params = {
             app,
@@ -144,7 +94,7 @@ async function updateRecord(client, app, recordid, resultPath) {
         client.record.updateRecord(params, (err) => {
             if (err) {
                 console.error(err.message);
-                return rejects(err);
+                return Promise.reject(err);
             }
             console.log('record update success');
         });
@@ -157,11 +107,22 @@ async function updateRecord(client, app, recordid, resultPath) {
         client.record.updateRecordStatus(statusParams, (err) => {
             if (err) {
                 console.error(err.message);
-                return rejects(err);
+                return Promise.reject(err);
             }
         });
+        return Promise.resolve();
     } catch(err) {
-        console.error(err.message);
-        return rejects(err);
+        console.log(`An error occurred in updateAppRecord!\n${err.message}`)
+        return Promise.reject(err);
     }
+}
+
+// pdffontsの結果を配列に変換
+async function parsLine(line) {
+    const {
+        fontname, fonttype, encoding, emb, sub, uni, fontobject, fontID
+    } = line.split(' ').map((col) => col.replace(" ", ""));
+    console.log(`line ${fontname}, ${type}, ${encoding}, ${emb}, ${sub}, ${uni}, ${fontobject}, ${fontID}`);
+    
+    return new resultCols(fontname, fonttype, encoding, emb, sub, uni, fontobject, fontID);
 }
