@@ -123,17 +123,22 @@ async function updateAppRecord(client, app, recordid, resultPath) {
 // pdffontsの結果を配列に変換
 async function parsLine(line) {
     try{
-        const name = new String(line.split(" ")[0]);
+        const namebae = new String(line).substring(0, "------------------------------------".length);
+        const name = namebae.trimEnd();
         console.log(`name: ${name}`);
         const lineStr = new String(line);
-        const fonttypeline = lineStr.substring(name.length).trim();
-        const fonttype = fonttypeline.split(" ")[0];
-        const encodingline = fonttypeline.substring(fonttype.length).trim();
-        const encoding = encodingline.split(" ")[0];
-        const embline = encodingline.substring(encoding.length).trim();
-        const emb = embline.split(" ")[0].trim();
-        const subline = embline.substring(emb.length).trim();
-        const sub = subline.split(" ")[0];
+        const fonttypelinebase = lineStr.substring(namebase.length);
+        const fonttypeline = fonttypelinebase.substring(0, "-----------------".length);
+        const fonttype = fonttypeline.trimEnd();
+        const encodinglinebase = fonttypelinebase.substring(fonttypeline.length);
+        const encodingline = fonttypelinebase.substring(fonttypeline.length, "----------------".length);
+        const encoding = encodingline.trimEnd();
+        const emblinebase = encodinglinebase.substring(encodingline.length);
+        const embline = encodinglinebase.substring(encodingline.length, "---".length);
+        const emb = embline.trimEnd();
+        const sublinebase = emblinebase.substring(embline.length);
+        const subline = emblinebase.substring(embline.length, "---".length);
+        const sub = subline.trimEnd();
         const uniline = subline.substring(sub.length).trim();
         const uni = uniline.split(" ")[0];
         const objectID = uniline.substring(uni.length).trim();
