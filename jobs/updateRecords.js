@@ -7,7 +7,7 @@ const { readFile, exists } = require('fs/promises')
 const { pipeline } = require('stream/promises');
 const { resolve } = require('path');
 const { subscribe } = require('diagnostics_channel');
-const { rejects } = require('assert');
+const { rejects, strict } = require('assert');
 
 
 (async ()=>{
@@ -45,11 +45,11 @@ const { rejects } = require('assert');
             (record) => {
                 // ファイル情報の取得
                 const { fileKey, name, contentType } = record['pdf'].value[0];
-                // 拡張子がpdfだったら、pdffonts実行
+                // 拡張子がpdfだったら、pdffonts実行結果の登録
                 const extention = (name.split('.').slice(-1)[0]).toLowerCase();
                 console.log(`拡張子: ${extention}`);
                 if( extention === 'pdf'){
-                    const fullPath = `temp/${name}`;
+                    const fullPath = `./temp/${name}`;
                     const resultPath = fullPath.replace(".pdf", ".txt");
                     // pdffontsの実行結果反映とステータス更新
                     return updateAppRecord(client, APP_ID, record.$id.value, resultPath);
@@ -67,20 +67,20 @@ async function updateAppRecord(client, app, recordid, resultPath) {
     try {
         console.log(`ID${recordid} : 結果ファイルの読み込み ${resultPath}`);
         // 結果の読み込み
-        const pdffontsResult = await readFile(encodeURI(resultPath), { encoding: "utf8" });
+        const pdffontsResult = await readFile(resultPath, { encoding: "utf8" });
         if(pdffontsResult.length<=0){
             throw new Error(`pdffontsResult is empty!`);
         }
         // pdffonts実行結果のパース
-        const resultCols = {
-            fontname, fonttype, encoding, emb, sub, uni, fontobject, fontID
-        }
-        const rows = pdffontsResult.split('\n').filter((row) => row.split(' ').length > 3).map(
+        const rows = pdffontsResult.split('\n').map(
             (row) => {
-                return new resultCols(parsLine(row));
-            }
-        );
+                const checkHeader = new String(row);
+                if(!checkHeader.startsWith("name") && !checkHeader.startsWith("---") && checkHeader.length > 0){
+                    return parsLine(row);
+                }
+                });
 
+        console.log(`rows[0]:\n ${rows}`);
         // レコードのpdffonts結果テキストを更新
         const params = {
             app,
@@ -88,6 +88,9 @@ async function updateAppRecord(client, app, recordid, resultPath) {
             record: {
                 "results_text" : {
                         "value": pdffontsResult
+                },
+                "pdffonts_result_table" : {
+                    "value": rows
                 }
             }
         }
@@ -98,19 +101,19 @@ async function updateAppRecord(client, app, recordid, resultPath) {
             }
             console.log('record update success');
         });
-        // ステータス更新
-        const statusParams = {
-            action : "自動チェック済",
-            app,
-            id: recordid,
-        }
-        client.record.updateRecordStatus(statusParams, (err) => {
-            if (err) {
-                console.error(err.message);
-                return Promise.reject(err);
-            }
-        });
-        return Promise.resolve();
+        // // ステータス更新
+        // const statusParams = {
+        //     action : "自動チェック済",
+        //     app,
+        //     id: recordid,
+        // }
+        // client.record.updateRecordStatus(statusParams, (err) => {
+        //     if (err) {
+        //         console.error(err.message);
+        //         return Promise.reject(err);
+        //     }
+        // });
+        return Promise.resolve(true);
     } catch(err) {
         console.log(`An error occurred in updateAppRecord!\n${err.message}`)
         return Promise.reject(err);
@@ -119,10 +122,59 @@ async function updateAppRecord(client, app, recordid, resultPath) {
 
 // pdffontsの結果を配列に変換
 async function parsLine(line) {
-    const {
-        fontname, fonttype, encoding, emb, sub, uni, fontobject, fontID
-    } = line.split(' ').map((col) => col.replace(" ", ""));
-    console.log(`line ${fontname}, ${type}, ${encoding}, ${emb}, ${sub}, ${uni}, ${fontobject}, ${fontID}`);
-    
-    return new resultCols(fontname, fonttype, encoding, emb, sub, uni, fontobject, fontID);
+    try{
+        const name = new String(line.split(" ")[0]);
+        console.log(`name: ${name}`);
+        const lineStr = new String(line);
+        const fonttypeline = lineStr.substring(name.length).trim();
+        const fonttype = fonttypeline.split(" ")[0];
+        const encodingline = fonttypeline.substring(fonttype.length).trim();
+        const encoding = encodingline.split(" ")[0];
+        const embline = encodingline.substring(encoding.length).trim();
+        const emb = embline.split(" ")[0].trim();
+        const subline = embline.substring(emb.length).trim();
+        const sub = subline.split(" ")[0];
+        const uniline = subline.substring(sub.length).trim();
+        const uni = uniline.split(" ")[0];
+        const objectID = uniline.substring(uni.length).trim();
+        console.log(`got ${name}, ${fonttype}, ${encoding}, ${emb}, ${sub}, ${uni}, ${objectID}`);
+        const result = { 
+            value: {
+                name: {
+                    type: 'SINGLE_LINE_TEXT',
+                    value: name
+                },
+                type: {
+                    type: 'SINGLE_LINE_TEXT',
+                    value: fonttype
+                },
+                encoding: {
+                    type: 'SINGLE_LINE_TEXT',
+                    value: encoding
+                },
+                emb: {
+                    type: 'SINGLE_LINE_TEXT',
+                    value: emb
+                },
+                sub: {
+                    type: 'SINGLE_LINE_TEXT',
+                    value: sub
+                },
+                uni: {
+                    type: 'SINGLE_LINE_TEXT',
+                    value: uni
+                },
+                object_id: {
+                    type: 'SINGLE_LINE_TEXT',
+                    object: objectID
+                }
+            }
+        };
+        console.log(`result= ${result.value}`);
+        return result;
+
+    }
+    catch(err){
+        console.log("parsLine error");
+    }
 }
