@@ -9,7 +9,6 @@ const { resolve } = require('path');
 const { subscribe } = require('diagnostics_channel');
 const { rejects, strict } = require('assert');
 
-
 (async ()=>{
 
     try {
@@ -72,15 +71,16 @@ async function updateAppRecord(client, app, recordid, resultPath) {
             throw new Error(`pdffontsResult is empty!`);
         }
         // pdffonts実行結果のパース
-        const rows = pdffontsResult.split('\n').map(
+        const rows = await pdffontsResult.split('\n').map(
             (row) => {
-                const checkHeader = new String(row);
-                if(!checkHeader.startsWith("name") && !checkHeader.startsWith("---") && checkHeader.length > 0){
-                    return parsLine(row);
+                const rowString = new String(row);
+                if(!rowString.startsWith("name") && !rowString.startsWith("---") && rowString.length > 0){
+                    console.log(`rowStrng: ${rowString}`);
+                    return parsLine(rowString);
                 }
-                });
+            }).filter((row) => row != undefined);
 
-        console.log(`rows[0]:\n ${rows}`);
+        console.log(`rows`, rows);
         // レコードのpdffonts結果テキストを更新
         const params = {
             app,
@@ -101,18 +101,18 @@ async function updateAppRecord(client, app, recordid, resultPath) {
             }
             console.log('record update success');
         });
-        // // ステータス更新
-        // const statusParams = {
-        //     action : "自動チェック済",
-        //     app,
-        //     id: recordid,
-        // }
-        // client.record.updateRecordStatus(statusParams, (err) => {
-        //     if (err) {
-        //         console.error(err.message);
-        //         return Promise.reject(err);
-        //     }
-        // });
+        // ステータス更新
+        const statusParams = {
+            action : "自動チェック済",
+            app,
+            id: recordid,
+        }
+        client.record.updateRecordStatus(statusParams, (err) => {
+            if (err) {
+                console.error(err.message);
+                return Promise.reject(err);
+            }
+        });
         return Promise.resolve(true);
     } catch(err) {
         console.log(`An error occurred in updateAppRecord!\n${err.message}`)
@@ -121,27 +121,16 @@ async function updateAppRecord(client, app, recordid, resultPath) {
 }
 
 // pdffontsの結果を配列に変換
-async function parsLine(line) {
+function parsLine(line) {
+    const HEADER = "name                                 type              encoding         emb sub uni object ID";
     try{
-        const namebae = new String(line).substring(0, "------------------------------------".length);
-        const name = namebae.trimEnd();
-        console.log(`name: ${name}`);
-        const lineStr = new String(line);
-        const fonttypelinebase = lineStr.substring(namebase.length);
-        const fonttypeline = fonttypelinebase.substring(0, "-----------------".length);
-        const fonttype = fonttypeline.trimEnd();
-        const encodinglinebase = fonttypelinebase.substring(fonttypeline.length);
-        const encodingline = fonttypelinebase.substring(fonttypeline.length, "----------------".length);
-        const encoding = encodingline.trimEnd();
-        const emblinebase = encodinglinebase.substring(encodingline.length);
-        const embline = encodinglinebase.substring(encodingline.length, "---".length);
-        const emb = embline.trimEnd();
-        const sublinebase = emblinebase.substring(embline.length);
-        const subline = emblinebase.substring(embline.length, "---".length);
-        const sub = subline.trimEnd();
-        const uniline = subline.substring(sub.length).trim();
-        const uni = uniline.split(" ")[0];
-        const objectID = uniline.substring(uni.length).trim();
+        const name = getName(line, HEADER);
+        const fonttype = getFontType(line, HEADER);
+        const encoding = getEncoding(line, HEADER);
+        const emb = getEmb(line, HEADER);
+        const sub = getSub(line, HEADER);
+        const uni = getUni(line, HEADER);
+        const objectID = getObjectID(line, HEADER);
         console.log(`got ${name}, ${fonttype}, ${encoding}, ${emb}, ${sub}, ${uni}, ${objectID}`);
         const result = { 
             value: {
@@ -171,15 +160,76 @@ async function parsLine(line) {
                 },
                 object_id: {
                     type: 'SINGLE_LINE_TEXT',
-                    object: objectID
+                    value: objectID
                 }
             }
         };
-        console.log(`result= ${result.value}`);
+        console.log(`result`, result);
         return result;
 
     }
     catch(err){
         console.log("parsLine error");
     }
+}
+
+// フォント名の取得
+function getName(source, headline){
+    const nextStr = "type";
+    const namebase = source.substring(0, headline.indexOf(nextStr));
+    console.log(`namabase[${namebase}] trimEnd[${namebase.trimEnd()}]`);
+    return namebase.trimEnd();
+}
+
+// フォントタイプの取得
+function getFontType(source, headline){
+    const startStr = "type";
+    const nextStr = "encoding";
+    const fonttypebase = source.substring(headline.indexOf(startStr), headline.indexOf(nextStr));
+    console.log(`fonttypebase[${fonttypebase}]`);
+    return fonttypebase.trimEnd();
+}
+
+// encodingの取得
+function getEncoding(source, headline){
+    const startStr = "encoding";
+    const nextStr = "emb";
+    const encodingbase = source.substring(headline.indexOf(startStr), headline.indexOf(nextStr));
+    console.log(`encodingbase: ${encodingbase}`);
+    return encodingbase.trimEnd();
+}
+
+// embの取得
+function getEmb(source, headline){
+    const startStr = "emb";
+    const nextStr = "sub";
+    const embbase = source.substring(headline.indexOf(startStr), headline.indexOf(nextStr));
+    console.log(`embbase: ${embbase}`);
+    return embbase.trimEnd();
+}
+
+// subの取得
+function getSub(source, headline){
+    const startStr = "sub";
+    const nextStr = "uni";
+    const subbase = source.substring(headline.indexOf(startStr), headline.indexOf(nextStr));
+    console.log(`subbase: ${subbase}`);
+    return subbase.trimEnd();
+}
+
+// uniの取得
+function getUni(source, headline){
+    const startStr = "uni";
+    const nextStr = "object";;
+    const unibase = source.substring(headline.indexOf(startStr), headline.indexOf(nextStr));
+    console.log(`unibase: ${unibase}`);
+    return unibase.trimEnd();
+}
+
+// objectIDの取得
+function getObjectID(source, headline){
+    const startStr = "object";
+    const objbase = source.substring(headline.indexOf(startStr));
+    console.log(`objbase: ${objbase}`);
+    return objbase.trimEnd();
 }
