@@ -30,7 +30,8 @@ jobs:
       - name: run pdffonts
         run: sh execPdffonts.sh
       - name: debug
-        run: ls temp/* 
+        run: ls temp/*
+             ls done/*
       - name: update kintone records
         run: node jobs/updateRecords.js
       - name: finish work
