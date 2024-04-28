@@ -27,10 +27,10 @@ jobs:
              mkdir -p done
       - name: fetch pdf files
         run: node jobs/fetchPDF.js
-      - name: debug
-        run: ls temp/* 
       - name: run pdffonts
         run: sh execPdffonts.sh
+      - name: debug
+        run: ls temp/* 
       - name: update kintone records
         run: node jobs/updateRecords.js
       - name: finish work
