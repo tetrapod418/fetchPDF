@@ -34,5 +34,4 @@ jobs:
       - name: update kintone records
         run: node jobs/updateRecords.js
       - name: finish work
-        run: rm ./temp/*
-             rm ./done/*
+        run: rm ./temp/* ./done/*
