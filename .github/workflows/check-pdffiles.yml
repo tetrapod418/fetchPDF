@@ -16,6 +16,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
+      - name: Install pdffonts
+        run: |
+            sudo apt-get update
+            sudo apt-get install poppler-utils
       - name: Install modules
         run: npm ci
       - name: make dirs
