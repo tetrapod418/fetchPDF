@@ -1,0 +1,9 @@
+name: test workflow to exec other branch
+on:
+    workflow_dispatch:
+jobs:
+    dummy:
+        if: ${{ false }}
+        runs-on: ubunts-latest
+        steps:
+            - run: ""
