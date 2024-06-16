@@ -3,6 +3,7 @@ on:
     workflow_dispatch:
 jobs:
     other-branch-job:
-        runs-on: ubunts-latest
+        runs-on: ubuntu-latest
         steps:
-            - run: echo "execute other branch workflow!"
+            - name: test job
+            run: echo "execute other branch workflow!"
